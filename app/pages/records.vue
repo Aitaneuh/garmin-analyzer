@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const { units, sport, year } = useFilters()
 const { data: s, pending } = useStats()
-const { data: status } = useStatus()
 
 const recordDefs = computed(() => {
   const u = units.value
@@ -15,14 +14,14 @@ const recordDefs = computed(() => {
     { key: 'steepest', label: 'Steepest (≥3 km)', fmt: (r: any) => `${nf(r.value, 1)} m/km` },
     { key: 'highestAvgHr', label: 'Highest average HR', fmt: (r: any) => `${nf(r.value)} bpm` },
     { key: 'highestMaxHr', label: 'Highest max HR', fmt: (r: any) => `${nf(r.value)} bpm` },
-    { key: 'highestSuffer', label: 'Highest relative effort', fmt: (r: any) => nf(r.value) },
-    { key: 'highestAvgWatts', label: 'Best weighted avg power', fmt: (r: any) => `${nf(r.value)} W` },
-    { key: 'highestMaxWatts', label: 'Highest max power', fmt: (r: any) => `${nf(r.value)} W` },
-    { key: 'mostKilojoules', label: 'Most work', fmt: (r: any) => `${nf(r.value)} kJ` },
+    { key: 'highestLoad', label: 'Highest training load', fmt: (r: any) => nf(r.value) },
+    { key: 'highestAerobicTe', label: 'Highest aerobic TE', fmt: (r: any) => nf(r.value, 1) },
+    { key: 'highestAnaerobicTe', label: 'Highest anaerobic TE', fmt: (r: any) => nf(r.value, 1) },
     { key: 'mostCalories', label: 'Most calories', fmt: (r: any) => `${nf(r.value)} kcal` },
-    { key: 'mostKudos', label: 'Most kudos', fmt: (r: any) => nf(r.value) },
-    { key: 'mostAchievements', label: 'Most achievements', fmt: (r: any) => nf(r.value) },
-    { key: 'biggestGroup', label: 'Biggest group', fmt: (r: any) => `${nf(r.value)} athletes` },
+    { key: 'highestCadence', label: 'Highest run cadence (≥10 min)', fmt: (r: any) => `${nf(r.value)} spm` },
+    { key: 'longestStride', label: 'Longest avg stride (≥10 min)', fmt: (r: any) => (u === 'metric' ? `${nf(r.value, 2)} m` : `${nf(r.value / 0.3048, 2)} ft`) },
+    { key: 'highestAvgWatts', label: 'Best normalized power', fmt: (r: any) => `${nf(r.value)} W` },
+    { key: 'highestMaxWatts', label: 'Highest max power', fmt: (r: any) => `${nf(r.value)} W` },
   ]
 })
 
@@ -62,8 +61,8 @@ const edd = computed(() => (units.value === 'metric' ? s.value?.eddington.km : s
         <StatTile accent label="Longest daily streak" :value="`${s.streaks.longestDays} days`" :sub="s.streaks.longestDaysFrom ? `${fmtDate(s.streaks.longestDaysFrom)} → ${fmtDate(s.streaks.longestDaysTo)}` : ''" />
         <StatTile accent label="Current daily streak" :value="`${s.streaks.currentDays} days`" />
         <StatTile accent label="Longest weekly streak" :value="`${s.streaks.longestWeeks} weeks`" :sub="`current: ${s.streaks.currentWeeks} weeks`" />
-        <StatTile label="Strava PRs" :value="nf(s.flags.prs)" />
-        <StatTile label="Achievements" :value="nf(s.flags.achievements)" />
+        <StatTile label="Races" :value="nf(s.flags.races)" />
+        <StatTile label="Best-effort distances" :value="nf(s.bestEfforts.length)" :sub="s.bestEfforts.length ? `up to ${s.bestEfforts.at(-1).name}` : ''" />
       </div>
       <p class="muted" style="margin: 8px 2px 0; font-size: 12.5px">
         Eddington number E = the largest number such that you've done at least E {{ eddingtonUnit }} on E different days.
@@ -72,23 +71,20 @@ const edd = computed(() => (units.value === 'metric' ? s.value?.eddington.km : s
       <div class="section"><h2>All-time bests</h2></div>
       <div class="records">
         <template v-for="d in recordDefs" :key="d.key">
-          <a v-if="s.records[d.key]" class="card rec" :href="stravaUrl(s.records[d.key].id)" target="_blank" rel="noopener">
+          <component :is="s.records[d.key].garmin_id ? 'a' : 'div'" v-if="s.records[d.key]" class="card rec" :href="garminUrl(s.records[d.key].garmin_id)" target="_blank" rel="noopener">
             <div class="rec-label">{{ d.label }}</div>
             <div class="rec-value">{{ d.fmt(s.records[d.key]) }}</div>
             <div class="rec-name">{{ s.records[d.key].name }}</div>
             <div class="muted rec-date"><span class="swatch" :style="{ background: sportColor(s.records[d.key].sport_type) }" />{{ sportLabel(s.records[d.key].sport_type) }} · {{ fmtDate(s.records[d.key].date) }}</div>
-          </a>
+          </component>
         </template>
       </div>
 
       <div class="section row">
         <h2>Best efforts</h2>
-        <span class="muted" style="font-size: 12.5px">from running activity details — {{ s.detailsCoverage.withDetail }} / {{ s.detailsCoverage.total }} activities detailed</span>
+        <span class="muted" style="font-size: 12.5px">fastest segment of every run, computed from the FIT distance stream</span>
       </div>
-      <div v-if="status && status.pendingDetails > 0" class="notice" style="margin-bottom: 12px">
-        {{ status.pendingDetails }} activities still need their details downloaded. This happens automatically in the background (~90 every 15 minutes, to respect Strava's rate limits), so best efforts and calories fill in over time.
-      </div>
-      <div v-if="!s.bestEfforts.length" class="empty card">No best efforts yet. They come from detailed runs — select a running sport or wait for the detail sync.</div>
+      <div v-if="!s.bestEfforts.length" class="empty card">No best efforts yet. They are computed from runs; select a running sport or all sports.</div>
       <div v-else class="grid g-2">
         <div class="card table-wrap">
           <table class="data">
@@ -98,7 +94,7 @@ const edd = computed(() => (units.value === 'metric' ? s.value?.eddington.km : s
                 <td><strong>{{ e.name }}</strong> <span class="muted">({{ e.count }})</span></td>
                 <td class="r"><strong>{{ fmtClock(e.top[0].moving_time) }}</strong></td>
                 <td class="r">{{ fmtSpeed(e.distance / e.top[0].moving_time, units, 'Run') }}</td>
-                <td><a :href="stravaUrl(e.top[0].activity_id)" target="_blank" rel="noopener" @click.stop>{{ e.top[0].activity_name }}</a></td>
+                <td><ActLink :gid="e.top[0].garmin_id">{{ e.top[0].activity_name }}</ActLink></td>
                 <td class="r">{{ fmtDate(e.top[0].start_date_local) }}</td>
               </tr>
             </tbody>
@@ -112,7 +108,7 @@ const edd = computed(() => (units.value === 'metric' ? s.value?.eddington.km : s
                 <td class="muted">#{{ Number(i) + 1 }}</td>
                 <td><strong>{{ fmtClock(t.moving_time) }}</strong></td>
                 <td>{{ fmtSpeed(t.distance / t.moving_time, units, 'Run') }}</td>
-                <td><a :href="stravaUrl(t.activity_id)" target="_blank" rel="noopener">{{ t.activity_name }}</a></td>
+                <td><ActLink :gid="t.garmin_id">{{ t.activity_name }}</ActLink></td>
                 <td class="r">{{ fmtDate(t.start_date_local) }}</td>
               </tr>
             </tbody>
@@ -127,7 +123,7 @@ const edd = computed(() => (units.value === 'metric' ? s.value?.eddington.km : s
 <style scoped>
 .records { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .rec { color: inherit; display: block; }
-.rec:hover { text-decoration: none; border-color: var(--accent); }
+a.rec:hover { text-decoration: none; border-color: var(--accent); }
 .rec-label { color: var(--text-2); font-size: 12.5px; font-weight: 550; }
 .rec-value { font-size: 22px; font-weight: 650; margin: 4px 0; letter-spacing: -0.02em; }
 .rec-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

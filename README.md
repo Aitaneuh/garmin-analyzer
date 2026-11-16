@@ -1,110 +1,101 @@
-# Strava Analyzer
+# Garmin Analyzer
 
-A self-hosted Nuxt 4 dashboard for your Strava data. It downloads your full history once, stores it in a Docker volume, and keeps it up to date automatically.
+A self-hosted Nuxt 4 dashboard for your Garmin watch (built and tested for a Forerunner 255; any Garmin that writes FIT files works).
+Data comes from **FIT files** (always works, no account needed) and optionally from **Garmin Connect auto-sync** (new activities + daily health data).
 
 ## What's inside
 
 | Page | Statistics |
 |---|---|
-| **Overview** | Totals (count, distance, time, elevation, calories, kudos, PRs), weekly averages, active days, current streak, Eddington number, GitHub-style activity calendar, monthly volume stacked by sport, weekly volume, time per sport, fun facts (Everests, laps of Earth, Moon %), Strava's official recent/YTD/all-time totals, sport breakdown table, recent activities |
-| **Trends** | Year-over-year cumulative distance, per-year distance/time/elevation/count with year-on-year change, monthly pace/speed trend, monthly heart rate, pace over time, distance vs pace, HR vs pace (efficiency), monthly elevation, day of week, start hour, day × hour punchcard, distance histogram, HR histogram |
-| **Records & PRs** | Eddington number, daily and weekly streaks, 16 all-time records (longest, fastest, highest climb, top speed, max HR, power, kJ, calories, kudos, steepest…), best efforts (400 m → marathon) with top 5 and best-per-year progression |
-| **Heatmap** | Every GPS route on one map, colored as a heatmap or by sport, with adjustable intensity. Click a route to open it on Strava |
-| **Activities** | Sortable, searchable table with 16 columns, filters (races, commutes, indoor, HR) and CSV export |
-| **Gear** | Lifetime distance per bike/shoe, usage stats, recording devices, your HR and power zones |
+| **Overview** | Totals, per-week averages, active days, streaks, Eddington number, activity calendar, monthly/weekly volume by sport, time per sport, fitness snapshot (fitness/fatigue/form, VO2 max, resting HR, HRV, sleep), sport breakdown, recent activities |
+| **Trends** | Year-over-year cumulative distance, per-year table, monthly pace/speed and heart rate, pace over time, distance vs pace, HR vs pace, elevation, day of week, start hour, punchcard, histograms |
+| **Training** | Fitness (42-day load), fatigue (7-day load) and form from Garmin's training load, weekly time in HR zones, zone distribution (80/20), aerobic/anaerobic Training Effect, running dynamics (cadence, stride length, ground contact time, vertical oscillation, vertical ratio), power curve |
+| **Records & PRs** | Eddington, streaks, 16 all-time records (incl. training load, TE, cadence, stride), best efforts 400 m → 50K computed from every run's distance stream, top 5 and best per year |
+| **Heatmap** | Every GPS track on one map, heat or by sport |
+| **Activities** | Sortable/searchable table, filters (races, indoor, HR, running dynamics), CSV export |
+| **Health** *(Garmin Connect)* | Resting HR, HRV, sleep stages and score, bed/wake time, VO2 max, steps vs goal, Body Battery, stress, intensity minutes, race predictions |
+| **Devices & zones** | Recording devices, your watch's HR zones and time in each, physiological profile (VO2 max, lactate threshold HR…) |
 
-You can filter every page by **sport** and **year**, switch between **km and miles**, and choose light, dark or automatic theme.
+Filter every page by **sport** and **year**, switch **km / miles**, light / dark / auto theme.
 
 ---
 
-## Step 1: Create a Strava API application (5 minutes)
+## 1. Build the image and deploy on Portainer
 
-1. Log in to Strava and go to **https://www.strava.com/settings/api**.
-2. Fill in the form:
-   - **Application Name**: anything, e.g. `My Stats`
-   - **Category**: `Data Importer` (or anything else)
-   - **Website**: anything, e.g. `http://localhost`
-   - **Authorization Callback Domain**: **only the host name** of the address you open the dashboard on. No `http://`, port or path:
-     - `192.168.1.50` if you use `http://192.168.1.50:3000`
-     - `strava.mydomain.com` if you use a reverse proxy at `https://strava.mydomain.com`
-     - `localhost` for local testing
-3. Upload any icon, then save.
-4. Copy the **Client ID** and the **Client Secret** (click "show").
-
-> Your app starts in Strava's "single player" mode: it can only be connected to **your own** account. That's all you need.
-
-## Step 2: Deploy on Portainer
-
-There are two ways to get the image onto your server. Option A is the easiest.
-
-### Option A: Build the image in Portainer (no command line)
-
-1. Zip or tar this project folder **without** `node_modules`, `.nuxt`, `.output` and `data`. For example, from the project folder on Windows PowerShell:
+1. Pack the project folder **without** `node_modules`, `.nuxt`, `.output` and `data`. From the project folder in PowerShell:
    ```powershell
-   tar -czf strava-analyzer.tar.gz --exclude=node_modules --exclude=.nuxt --exclude=.output --exclude=data .
+   tar -czf garmin-analyzer.tar.gz --exclude=node_modules --exclude=.nuxt --exclude=.output --exclude=data --exclude=*.tar.gz .
    ```
-2. In Portainer, open **Images → Build a new image**.
-   - Name: `strava-analyzer:latest`
-   - Build method: **Upload**, then select `strava-analyzer.tar.gz`
-   - Click **Build the image** (takes 1–2 min).
-3. Open **Stacks → Add stack → Web editor**, name it `strava-analyzer`, and paste the contents of [`portainer-stack.yml`](portainer-stack.yml).
-4. Replace the values in `environment:` (see the table below), then click **Deploy the stack**.
+2. Portainer → **Images → Build a new image** → name `strava-analyzer:latest` → **Upload** the `.tar.gz` → **Build the image** (2–4 min).
+3. Portainer → **Stacks** → your existing stack (or **Add stack**) → **Editor** → paste [`portainer-stack.yml`](portainer-stack.yml) → set `NUXT_DASHBOARD_PASSWORD` → **Update / Deploy the stack**.
+4. Open `http://<server-ip>:5000` (or your reverse-proxy domain).
 
-### Option B: Portainer stack from a Git repository
-
-Push this folder to a (private) GitHub/GitLab repo. In Portainer, go to **Stacks → Add stack → Repository**, enter the repo URL (and credentials if it's private), and use `docker-compose.yml` as the compose path. Portainer builds the image itself. Set the variables under **Environment variables**: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `APP_URL`, `DASHBOARD_PASSWORD`.
-
-### Option C: Command line on the Docker host
-```bash
-docker build -t strava-analyzer:latest .
-```
-Then deploy `portainer-stack.yml` as in Option A, step 3.
+(Alternatives: `docker build -t strava-analyzer:latest .` on the host, or a Portainer stack from a Git repo using `docker-compose.yml`.)
 
 ### Environment variables
 
-| Variable | Required | Description |
+| Variable | Default | Description |
 |---|---|---|
-| `NUXT_STRAVA_CLIENT_ID` | ✅ | From strava.com/settings/api |
-| `NUXT_STRAVA_CLIENT_SECRET` | ✅ | From strava.com/settings/api |
-| `NUXT_APP_URL` | ✅ | The exact URL you type in the browser, e.g. `http://192.168.1.50:3000` (no trailing slash). Its host name must match the Strava **Authorization Callback Domain**. |
-| `NUXT_DASHBOARD_PASSWORD` | recommended | Shows a login page. Leave empty to disable it. Use a password if the dashboard can be reached from outside your home network, because it shows private activities and where you train. |
-| `NUXT_SYNC_INTERVAL_MINUTES` | | Auto-sync interval (default `60`, `0` = manual only) |
-| `NUXT_DETAIL_SYNC` | | `true` (default): slowly downloads each activity's details (best efforts, calories, device) |
-| `TZ` | | Container time zone |
+| `NUXT_DASHBOARD_PASSWORD` | *(empty)* | Login page for the dashboard. **Strongly recommended** if reachable from the internet: it shows your health data and where you train. |
+| `NUXT_SYNC_INTERVAL_MINUTES` | `60` | How often to sync Garmin Connect (and the import folder). `0` = only when you click Sync. |
+| `NUXT_GARMIN_HEALTH_DAYS` | `365` | Days of health history to download and keep up to date. |
+| `NUXT_GARMIN_MAX_DOWNLOADS` | `150` | Activity files downloaded from Garmin Connect per sync (a long history takes a few syncs). |
+| `NUXT_IMPORT_DIR` | *(empty)* | Folder inside the container to watch for new `.fit` / `.zip` files, e.g. `/import` (mount a host folder there). |
+| `TZ` | | Container time zone. |
 
-Your data (tokens and activities) is stored in the `strava-data` volume at `/data`, so it survives updates.
+Everything (activities, original FIT files, health data, Garmin token) lives in the `strava-data` volume at `/data`.
 
-## Step 3: Connect
+## 2. Get your data in
 
-1. Open `NUXT_APP_URL` (e.g. `http://192.168.1.50:3000`) and log in if you set a password.
-2. The **Settings** page opens. Click **Connect with Strava**, approve on Strava, and **keep the "View data about your private activities" box ticked**.
-3. You are sent back to the dashboard and the first sync starts. A few thousand activities take about a minute.
+### A. Import FIT files (recommended for your history, no login needed)
+In **Settings → Import FIT files**, drop any of these:
+- **Your whole history:** [garmin.com → Account → Data Management → Export Your Data](https://www.garmin.com/account/datamanagement/exportdata). Garmin emails a zip (hours to days). Upload the zip as is. Nested zips are handled, and activity names come from the `summarizedActivities.json` inside.
+- **From the watch:** plug the Forerunner into a computer via USB, copy `GARMIN/Activity/*.fit`.
+- **A single activity:** Garmin Connect → activity → ⚙ → *Export Original*.
+- **From Strava:** Strava's "Download your data" archive (`.fit.gz` inside) also works.
 
-### About Strava's rate limits
-Strava allows 100 read requests per 15 minutes and 1,000 per day. Activity summaries come 200 per request, so the full history downloads quickly. **Best efforts (5K, 10K… PRs), calories and device names need one request per activity.** The app fetches those in the background, about 90 every 15 minutes (runs first), so with a big history they fill in over a day or two. The Settings page shows progress and your current API usage.
+Duplicates are detected by start time, so importing the same file twice is harmless.
+Optional: mount a folder as `/import` (see the stack file) and drop files there, e.g. via Syncthing or an SMB share. It's scanned every 5 minutes.
 
-## Updating the app
-Rebuild the image (Option A step 2 / `docker build`), then in Portainer open the stack and click **Update the stack** (or recreate the container). Your data volume is kept.
+> Behind a reverse proxy, large uploads need a big enough body limit (Nginx: `client_max_body_size 0;`, which Nginx Proxy Manager → *Advanced* lets you set). If the export zip is too big to upload, copy it into the watched `/import` folder instead.
+
+### B. Garmin Connect auto-sync (optional)
+In **Settings → Garmin Connect auto-sync**, log in with your Garmin email and password (and the verification code if you use 2-step verification). The password is used once and **never stored**; only the login token is kept in the data volume. Each sync then:
+- downloads new activities as original FIT files (same pipeline as import, so the same stats),
+- downloads daily health data: sleep, HRV, resting HR, steps, stress, Body Battery, intensity minutes, VO2 max, race predictions.
+
+The first sync of a long history takes several runs (150 activities and 45 days of health data per sync, to stay below Garmin's rate limits). Importing your Garmin export first makes it much faster.
+
+**Important:** Garmin has no official API for individuals. This uses the unofficial login of the Garmin Connect app via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect). Garmin changes it from time to time, which can break login until the library catches up. Rebuilding the image always installs the latest library version. FIT import keeps working regardless.
+
+If the login form keeps failing (rate limited / blocked), wait 15–30 minutes, or log in from a terminal: Portainer → Containers → `strava-analyzer` → **Console** → Connect, then:
+```sh
+python3 /app/garmin/bridge.py login-cli
+```
+
+## Updating
+Rebuild the image (step 1.2) and click **Update the stack**. Data is kept. After an update, **Settings → Re-process all FIT files** recomputes everything from the stored originals.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| Strava says **"redirect_uri invalid"** | The Authorization Callback Domain on strava.com doesn't match the host in `NUXT_APP_URL`. The Settings page shows the exact values to use. |
-| Back on the dashboard with "invalid_state" | You opened the dashboard on a different address than `NUXT_APP_URL` (e.g. `localhost` vs IP). Always use the same URL. |
-| "missing_activity_scope" | You unticked activity access on the Strava screen. Click Connect again and keep it ticked. |
-| Behind a reverse proxy (Nginx Proxy Manager, Traefik, Caddy) | Set `NUXT_APP_URL=https://strava.yourdomain.com`, set the callback domain to `strava.yourdomain.com`, and proxy to port 3000. |
-| Port 3000 already used | Change the left side of `ports:`, e.g. `"8085:3000"`, and update `NUXT_APP_URL`. |
+| Upload fails on big files | Raise the reverse proxy's body size limit, or use the `/import` folder. |
+| "Too many login attempts" / 429 | Garmin rate limit. Wait, then retry once. |
+| "Garmin rejected the saved login" | The token expired or was revoked. Log in again in Settings. |
+| Times shifted by an hour | The watch didn't write a time zone; times from Garmin Connect/export fix themselves on the next sync. |
+| Port 5000 already used | Change the left side of `ports:` (e.g. `"8085:3000"`). |
 
 ## Local development
 ```bash
 npm install
-cp .env.example .env   # fill NUXT_* values, NUXT_APP_URL=http://localhost:3000
-npm run dev            # http://localhost:3000 (Strava callback domain: localhost)
+npm run dev            # http://localhost:3000, data in ./data
+pip install garminconnect   # optional, Python 3.12+, for Garmin Connect sync
 ```
 
 ## How it works
-- **Nuxt 4** single-page app, with a **Nitro** server that handles OAuth, token refresh, sync and the statistics API.
-- Data is stored as JSON files in `/data` (`tokens.json`, `activities.json`, `details.json`, …). There is no database.
-- Charts use Chart.js and the map uses Leaflet with OpenStreetMap tiles.
-- The app only **reads** from Strava (`read, profile:read_all, activity:read_all`). It never writes to your account.
+- **Nuxt 4** single-page app + **Nitro** server: imports, statistics API, scheduler.
+- FIT files are decoded with Garmin's official [FIT JavaScript SDK](https://www.npmjs.com/package/@garmin/fitsdk); best efforts and the power curve are computed from the record streams.
+- `garmin/bridge.py` (Python) talks to Garmin Connect; the Node server runs it and merges the results.
+- Data is stored as JSON files plus the original FIT files in `/data`. No database.
+- Charts: Chart.js. Map: Leaflet + OpenStreetMap.

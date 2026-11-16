@@ -21,7 +21,7 @@ async function submit() {
     <form class="card box" @submit.prevent="submit">
       <div class="row" style="gap: 10px; margin-bottom: 18px">
         <img src="/favicon.svg" width="30" height="30" alt="">
-        <h1>Strava Analyzer</h1>
+        <h1>Garmin Analyzer</h1>
       </div>
       <label for="pw" class="text-2" style="font-size: 13px">Dashboard password</label>
       <input id="pw" v-model="password" type="password" autocomplete="current-password" autofocus style="width: 100%; margin: 6px 0 12px">

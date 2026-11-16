@@ -1,6 +1,6 @@
 import type { Activity, ActivityDetail } from './store'
 
-/** All dates use start_date_local, which Strava encodes as local wall time with a fake "Z". */
+/** All dates use start_date_local: local wall time encoded as ISO with a fake "Z". */
 const ymd = (a: Activity) => a.start_date_local.slice(0, 10)
 const year = (a: Activity) => Number(a.start_date_local.slice(0, 4))
 const month = (a: Activity) => a.start_date_local.slice(0, 7)
@@ -32,22 +32,22 @@ interface Agg {
   moving_time: number
   elapsed_time: number
   elevation: number
-  kudos: number
+  calories: number
   kilojoules: number
-  suffer: number
+  load: number
   hrTime: number // moving_time weighted HR sum
   hrSeconds: number
 }
-const emptyAgg = (): Agg => ({ count: 0, distance: 0, moving_time: 0, elapsed_time: 0, elevation: 0, kudos: 0, kilojoules: 0, suffer: 0, hrTime: 0, hrSeconds: 0 })
+const emptyAgg = (): Agg => ({ count: 0, distance: 0, moving_time: 0, elapsed_time: 0, elevation: 0, calories: 0, kilojoules: 0, load: 0, hrTime: 0, hrSeconds: 0 })
 function add(agg: Agg, a: Activity) {
   agg.count++
   agg.distance += a.distance
   agg.moving_time += a.moving_time
   agg.elapsed_time += a.elapsed_time
   agg.elevation += a.total_elevation_gain
-  agg.kudos += a.kudos_count
+  agg.calories += a.calories || 0
   agg.kilojoules += a.kilojoules || 0
-  agg.suffer += a.suffer_score || 0
+  agg.load += a.training_load || 0
   if (a.average_heartrate) {
     agg.hrTime += a.average_heartrate * a.moving_time
     agg.hrSeconds += a.moving_time
@@ -59,9 +59,9 @@ const finish = (agg: Agg) => ({
   moving_time: agg.moving_time,
   elapsed_time: agg.elapsed_time,
   elevation: agg.elevation,
-  kudos: agg.kudos,
+  calories: agg.calories,
   kilojoules: agg.kilojoules,
-  suffer: agg.suffer,
+  load: agg.load,
   avg_speed: agg.moving_time ? agg.distance / agg.moving_time : 0,
   avg_hr: agg.hrSeconds ? agg.hrTime / agg.hrSeconds : null,
 })
@@ -79,6 +79,7 @@ function groupBy<K extends string | number>(list: Activity[], key: (a: Activity)
 const pick = (a: Activity | undefined) =>
   a && {
     id: a.id,
+    garmin_id: a.garmin_id,
     name: a.name,
     sport_type: a.sport_type,
     date: a.start_date_local,
@@ -205,7 +206,7 @@ export function filterActivities(all: Activity[], f: StatsFilter) {
   })
 }
 
-export function computeStats(all: Activity[], details: Record<string, ActivityDetail>, athlete: any, filter: StatsFilter) {
+export function computeStats(all: Activity[], details: Record<string, ActivityDetail>, filter: StatsFilter) {
   const sportOnly = filterActivities(all, { sport: filter.sport })
   const list = filterActivities(all, filter)
   const totals = emptyAgg()
@@ -309,37 +310,37 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
   // --- Records -------------------------------------------------------------------
   const withDist = list.filter(a => a.distance > 0)
   const minDist = (a: Activity) => a.distance >= 1000 && a.moving_time > 0
+  const runs = list.filter(a => RUN_SPORTS.includes(a.sport_type))
   const records = {
     longestDistance: maxBy(list, a => a.distance),
     longestTime: maxBy(list, a => a.moving_time),
     mostElevation: maxBy(list, a => a.total_elevation_gain),
     fastestAvgSpeed: maxBy(list.filter(minDist), a => a.average_speed),
-    topSpeed: maxBy(list.filter(a => !a.trainer && !a.manual), a => a.max_speed),
+    topSpeed: maxBy(list.filter(a => !a.trainer), a => a.max_speed),
+    steepest: maxBy(list.filter(a => a.distance >= 3000), a => a.total_elevation_gain / a.distance * 1000),
     highestAvgHr: maxBy(list, a => a.average_heartrate),
     highestMaxHr: maxBy(list, a => a.max_heartrate),
-    mostKudos: maxBy(list, a => a.kudos_count),
-    highestSuffer: maxBy(list, a => a.suffer_score),
+    highestLoad: maxBy(list, a => a.training_load),
+    highestAerobicTe: maxBy(list, a => a.aerobic_te),
+    highestAnaerobicTe: maxBy(list, a => a.anaerobic_te),
+    mostCalories: maxBy(list, a => a.calories),
+    highestCadence: maxBy(runs.filter(a => a.moving_time >= 600), a => a.average_cadence),
+    longestStride: maxBy(runs.filter(a => a.moving_time >= 600), a => a.stride_length),
     highestAvgWatts: maxBy(list.filter(a => a.device_watts), a => a.weighted_average_watts ?? a.average_watts),
     highestMaxWatts: maxBy(list.filter(a => a.device_watts), a => a.max_watts),
-    mostKilojoules: maxBy(list, a => a.kilojoules),
-    mostCalories: maxBy(list, a => details[a.id]?.calories),
-    mostAchievements: maxBy(list, a => a.achievement_count),
-    biggestGroup: maxBy(list, a => a.athlete_count),
-    steepest: maxBy(list.filter(a => a.distance >= 3000), a => a.total_elevation_gain / a.distance * 1000),
   }
 
-  // Best efforts from detailed runs
+  // Best efforts (computed from the distance stream of every run)
   const effortMap = new Map<string, any[]>()
   for (const a of list) {
     for (const e of details[a.id]?.best_efforts ?? []) {
       if (!effortMap.has(e.name)) effortMap.set(e.name, [])
-      effortMap.get(e.name)!.push({ ...e, activity_id: a.id, activity_name: a.name })
+      effortMap.get(e.name)!.push({ ...e, activity_id: a.id, garmin_id: a.garmin_id, activity_name: a.name })
     }
   }
   const bestEfforts = [...effortMap]
     .map(([name, efforts]) => {
       const sorted = efforts.sort((x, y) => x.moving_time - y.moving_time)
-      // progression: best time per year
       const perYear = new Map<number, any>()
       for (const e of efforts) {
         const y = Number(e.start_date_local.slice(0, 4))
@@ -359,23 +360,79 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.distance - b.distance
     })
 
-  // --- Gear ---------------------------------------------------------------------------
-  const gearUsage = groupBy(list.filter(a => a.gear_id), a => a.gear_id!)
-  const gearList = [...(athlete?.bikes ?? []).map((g: any) => ({ ...g, kind: 'bike' })), ...(athlete?.shoes ?? []).map((g: any) => ({ ...g, kind: 'shoe' }))]
-  const gear = gearList
-    .map((g: any) => {
-      const u = gearUsage.get(g.id)
-      return {
-        id: g.id,
-        name: g.nickname || g.name,
-        kind: g.kind,
-        primary: g.primary,
-        retired: g.retired,
-        total_distance: g.distance ?? g.converted_distance,
-        ...(u ? finish(u) : finish(emptyAgg())),
-      }
-    })
-    .sort((a: any, b: any) => b.total_distance - a.total_distance)
+  // Power curve: best average power for each duration
+  const powerCurve: Record<string, { watts: number; id: number; garmin_id?: number; name: string; date: string }> = {}
+  for (const a of list) {
+    for (const [w, watts] of Object.entries(details[a.id]?.best_power ?? {})) {
+      if (!powerCurve[w] || powerCurve[w]!.watts < watts) powerCurve[w] = { watts, id: a.id, garmin_id: a.garmin_id, name: a.name, date: a.start_date_local }
+    }
+  }
+
+  // --- Heart-rate zones -------------------------------------------------------------
+  const zoneTotals = [0, 0, 0, 0, 0]
+  const zoneWeekly = new Map<string, number[]>()
+  let zoneBounds: number[] | undefined
+  let zoneBoundsDate = ''
+  for (const a of list) {
+    const z = details[a.id]?.hr_zones
+    if (!z?.times?.length) continue
+    const five = toFiveZones(z.times)
+    const wk = mondayOf(a.start_date_local)
+    const arr = zoneWeekly.get(wk) ?? [0, 0, 0, 0, 0]
+    five.forEach((v, i) => { zoneTotals[i]! += v; arr[i]! += v })
+    zoneWeekly.set(wk, arr)
+    if (z.bounds?.length && a.start_date_local > zoneBoundsDate) {
+      zoneBounds = z.bounds
+      zoneBoundsDate = a.start_date_local
+    }
+  }
+  const hrZones = {
+    totals: zoneTotals,
+    weekly: weekly.map(w => ({ week: w.week as string, times: zoneWeekly.get(w.week) ?? [0, 0, 0, 0, 0] })),
+    bounds: zoneBounds,
+  }
+
+  // --- Training load: fitness (CTL, 42 d), fatigue (ATL, 7 d), form (TSB) -------------
+  const trainingLoad = loadSeries(all, filter, maxHrOf(all))
+
+  // --- Running dynamics, monthly ---------------------------------------------------------
+  type Dyn = Record<'cad' | 'stride' | 'vo' | 'gct' | 'vr' | 'gap', [number, number]>
+  const dynMap = new Map<string, Dyn>()
+  const dynFields: [keyof Dyn, (a: Activity) => number | undefined][] = [
+    ['cad', a => a.average_cadence], ['stride', a => a.stride_length], ['vo', a => a.vertical_oscillation],
+    ['gct', a => a.ground_contact_time], ['vr', a => a.vertical_ratio], ['gap', a => a.avg_gap_speed],
+  ]
+  for (const a of runs) {
+    const k = month(a)
+    const v = dynMap.get(k) ?? { cad: [0, 0], stride: [0, 0], vo: [0, 0], gct: [0, 0], vr: [0, 0], gap: [0, 0] }
+    for (const [key, f] of dynFields) {
+      const x = f(a)
+      if (x) { v[key][0] += x * a.moving_time; v[key][1] += a.moving_time }
+    }
+    dynMap.set(k, v)
+  }
+  const avgOrNull = ([sum, t]: [number, number]) => (t ? sum / t : null)
+  const runningDynamics = [...dynMap].sort((a, b) => a[0].localeCompare(b[0])).map(([m, v]) => ({
+    month: m,
+    cadence: avgOrNull(v.cad),
+    stride: avgOrNull(v.stride),
+    vo: avgOrNull(v.vo),
+    gct: avgOrNull(v.gct),
+    vr: avgOrNull(v.vr),
+    gap: avgOrNull(v.gap),
+  }))
+
+  // --- Training effect distribution --------------------------------------------------------
+  const teBuckets = (f: (a: Activity) => number | undefined) => {
+    const b = [0, 0, 0, 0, 0, 0] // none, minor, maintaining, improving, highly improving, overreaching
+    for (const a of list) {
+      const v = f(a)
+      if (v == null) continue
+      b[v >= 5 ? 5 : v >= 4 ? 4 : v >= 3 ? 3 : v >= 2 ? 2 : v >= 1 ? 1 : 0]!++
+    }
+    return b
+  }
+  const trainingEffect = { aerobic: teBuckets(a => a.aerobic_te), anaerobic: teBuckets(a => a.anaerobic_te) }
 
   // --- Misc --------------------------------------------------------------------------
   const hrValues = list.filter(a => a.average_heartrate).map(a => Math.round(a.average_heartrate!))
@@ -386,7 +443,6 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
   }
 
   const daysWithDist = [...daily.values()].map(d => d.distance)
-  const caloriesTotal = list.reduce((s, a) => s + (details[a.id]?.calories ?? 0), 0)
   const firstActivity = list.reduce<Activity | undefined>((m, a) => (!m || a.start_date < m.start_date ? a : m), undefined)
   const spanDays = firstActivity ? Math.max(1, Math.round((Date.now() - new Date(firstActivity.start_date).getTime()) / dayMs)) : 0
   const periodDays = filter.year && filter.year !== 'all'
@@ -405,43 +461,46 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
     w: a.average_watts ?? null,
   }))
 
-  const devices = new Map<string, number>()
+  const devices = new Map<string, { count: number; first: string; last: string; time: number; distance: number }>()
   for (const a of list) {
-    const d = details[a.id]?.device_name
-    if (d) devices.set(d, (devices.get(d) ?? 0) + 1)
+    if (!a.device_name) continue
+    const d = devices.get(a.device_name) ?? { count: 0, first: a.start_date_local, last: a.start_date_local, time: 0, distance: 0 }
+    d.count++
+    d.time += a.moving_time
+    d.distance += a.distance
+    if (a.start_date_local < d.first) d.first = a.start_date_local
+    if (a.start_date_local > d.last) d.last = a.start_date_local
+    devices.set(a.device_name, d)
   }
 
   const flags = {
-    commute: list.filter(a => a.commute).length,
     trainer: list.filter(a => a.trainer).length,
-    manual: list.filter(a => a.manual).length,
-    private: list.filter(a => a.private).length,
-    races: list.filter(a => a.workout_type === 1 || a.workout_type === 11).length,
+    races: list.filter(a => a.race).length,
     withHr: list.filter(a => a.average_heartrate).length,
     withPower: list.filter(a => a.device_watts).length,
-    withPhotos: list.filter(a => a.photo_count > 0).length,
-    group: list.filter(a => a.athlete_count > 1).length,
-    prs: list.reduce((s, a) => s + a.pr_count, 0),
-    achievements: list.reduce((s, a) => s + a.achievement_count, 0),
-    comments: list.reduce((s, a) => s + a.comment_count, 0),
-    photos: list.reduce((s, a) => s + a.photo_count, 0),
+    withGps: list.filter(a => a.polyline).length,
+    withDynamics: list.filter(a => a.ground_contact_time).length,
+    withLoad: list.filter(a => a.training_load).length,
+    fromGarmin: list.filter(a => a.garmin_id).length,
   }
 
-  const cadence = list.filter(a => a.average_cadence)
-  const watts = list.filter(a => a.average_watts)
-  const temps = list.filter(a => a.average_temp != null)
+  const avgOf = (xs: Activity[], f: (a: Activity) => number | undefined) => {
+    const v = xs.map(f).filter((x): x is number => x != null)
+    return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null
+  }
 
   return {
     filter,
     totals: {
       ...finish(totals),
-      calories: caloriesTotal,
       avg_distance: totals.count ? totals.distance / totals.count : 0,
       avg_time: totals.count ? totals.moving_time / totals.count : 0,
       avg_elevation: totals.count ? totals.elevation / totals.count : 0,
-      avg_cadence: cadence.length ? cadence.reduce((s, a) => s + a.average_cadence!, 0) / cadence.length : null,
-      avg_watts: watts.length ? watts.reduce((s, a) => s + a.average_watts!, 0) / watts.length : null,
-      avg_temp: temps.length ? temps.reduce((s, a) => s + a.average_temp!, 0) / temps.length : null,
+      avg_cadence: avgOf(list, a => a.average_cadence),
+      avg_watts: avgOf(list, a => a.average_watts),
+      avg_temp: avgOf(list, a => a.avg_temp),
+      avg_aerobic_te: avgOf(list, a => a.aerobic_te),
+      avg_respiration: avgOf(list, a => a.avg_respiration),
       max_hr: list.reduce((m, a) => Math.max(m, a.max_heartrate ?? 0), 0) || null,
       first: pick(firstActivity),
       periodDays,
@@ -466,6 +525,11 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
     yoy,
     records,
     bestEfforts,
+    powerCurve,
+    hrZones,
+    trainingLoad,
+    runningDynamics,
+    trainingEffect,
     streaks: streaks([...daily.keys()]),
     eddington: {
       km: eddington(daysWithDist, 1000),
@@ -476,9 +540,64 @@ export function computeStats(all: Activity[], details: Record<string, ActivityDe
       imperial: histogram(withDist.map(a => a.distance), HIST_IMPERIAL),
     },
     hrHistogram: Object.entries(hrHist).map(([bpm, count]) => ({ bpm: Number(bpm), count })).sort((a, b) => a.bpm - b.bpm),
-    gear,
-    devices: [...devices].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    devices: [...devices].map(([name, d]) => ({ name, ...d })).sort((a, b) => b.count - a.count),
     scatter,
-    detailsCoverage: { withDetail: list.filter(a => details[a.id]).length, total: list.length },
   }
+}
+
+const RUN_SPORTS = ['Run', 'TrailRun', 'VirtualRun']
+
+/** Garmin's time_in_hr_zone often includes a "zone 0" (below zone 1); fold extras into zone 1. */
+function toFiveZones(times: number[]) {
+  if (times.length <= 5) return [...times, 0, 0, 0, 0, 0].slice(0, 5)
+  const extra = times.length - 5
+  const five = times.slice(extra)
+  five[0]! += times.slice(0, extra).reduce((s, v) => s + v, 0)
+  return five
+}
+
+function maxHrOf(all: Activity[]) {
+  const vals = all.map(a => a.max_heartrate ?? 0).filter(v => v > 100).sort((a, b) => b - a)
+  // 2nd-highest value guards against a one-off sensor spike
+  return vals[1] ?? vals[0] ?? 190
+}
+
+/** Load of one activity: Garmin's training load (EPOC) when present, otherwise a heart-rate TRIMP estimate. */
+export function activityLoad(a: Activity, maxHr: number) {
+  if (a.training_load) return a.training_load
+  if (!a.average_heartrate || !a.moving_time) return 0
+  const rest = 60
+  const hrr = Math.max(0, Math.min(1, (a.average_heartrate - rest) / Math.max(1, maxHr - rest)))
+  return (a.moving_time / 60) * hrr * 0.64 * Math.exp(1.92 * hrr)
+}
+
+/** Daily load with fitness (42-day EWMA), fatigue (7-day EWMA) and form, across all sports. */
+function loadSeries(all: Activity[], filter: StatsFilter, maxHr: number) {
+  const byDay = new Map<string, number>()
+  for (const a of all) byDay.set(ymd(a), (byDay.get(ymd(a)) ?? 0) + activityLoad(a, maxHr))
+  if (!byDay.size) return []
+  const todayStr = new Date().toISOString().slice(0, 10)
+  let winStart: string
+  let winEnd: string
+  if (filter.year && filter.year !== 'all') {
+    winStart = `${filter.year}-01-01`
+    winEnd = Number(filter.year) === new Date().getUTCFullYear() ? todayStr : `${filter.year}-12-31`
+  } else {
+    winEnd = todayStr
+    winStart = addDays(todayStr, -364)
+  }
+  const first = [...byDay.keys()].sort()[0]!
+  const kA = 1 - Math.exp(-1 / 7)
+  const kC = 1 - Math.exp(-1 / 42)
+  let atl = 0
+  let ctl = 0
+  const out: { date: string; load: number; atl: number; ctl: number; tsb: number }[] = []
+  for (let d = first < winStart ? first : winStart; d <= winEnd; d = addDays(d, 1)) {
+    const load = byDay.get(d) ?? 0
+    const tsb = ctl - atl // form is yesterday's fitness minus fatigue
+    atl += (load - atl) * kA
+    ctl += (load - ctl) * kC
+    if (d >= winStart) out.push({ date: d, load: Math.round(load), atl: Math.round(atl * 10) / 10, ctl: Math.round(ctl * 10) / 10, tsb: Math.round(tsb * 10) / 10 })
+  }
+  return out
 }

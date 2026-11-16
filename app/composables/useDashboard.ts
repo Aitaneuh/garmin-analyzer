@@ -27,25 +27,34 @@ export function useFilters() {
 }
 
 export interface Status {
-  configured: boolean
-  connected: boolean
   passwordProtected: boolean
-  redirectUri: string
-  callbackDomain: string
-  athlete: any
   activityCount: number
-  detailCount: number
-  pendingDetails: number
+  healthDays: number
   sports: string[]
   years: string[]
+  devices: string[]
+  garmin: {
+    available: boolean
+    loggedIn: boolean
+    connected?: boolean
+    fullName?: string
+    displayName?: string
+    lastSync?: number
+    lastError?: string
+    historyDone?: boolean
+    profile?: Record<string, any>
+  }
+  importDir: string | null
   sync: {
     running: boolean
     phase: string
-    fetched: number
+    message: string
+    done: number
+    total: number
     lastSync?: number
     lastSyncError?: string
-    lastDetailSync?: number
-    rateLimit?: { shortUsage: number; shortLimit: number; dailyUsage: number; dailyLimit: number }
+    lastImport?: number
+    lastImportSummary?: string
   }
   syncIntervalMinutes: number
 }
@@ -66,6 +75,17 @@ export function useStats() {
   return useFetch<any>('/api/stats', {
     query,
     key: computed(() => `stats-${query.value.sport}-${query.value.year}-${version.value}`),
+    server: false,
+  })
+}
+
+/** Daily health data (Garmin Connect) for the last `days` days. */
+export function useWellness(days: Ref<number> | number = 365) {
+  const version = useDataVersion()
+  const d = computed(() => unref(days))
+  return useFetch<any>('/api/wellness', {
+    query: computed(() => ({ days: d.value })),
+    key: computed(() => `wellness-${d.value}-${version.value}`),
     server: false,
   })
 }

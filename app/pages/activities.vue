@@ -12,7 +12,7 @@ const sortKey = ref('start_date_local')
 const sortDir = ref<1 | -1>(-1)
 const page = ref(1)
 const perPage = 50
-const flags = ref({ race: false, commute: false, trainer: false, hr: false })
+const flags = ref({ race: false, trainer: false, hr: false, dyn: false })
 
 const columns = [
   { key: 'start_date_local', label: 'Date' },
@@ -27,18 +27,18 @@ const columns = [
   { key: 'max_heartrate', label: 'Max HR', r: true },
   { key: 'average_watts', label: 'Watts', r: true },
   { key: 'average_cadence', label: 'Cadence', r: true },
-  { key: 'suffer_score', label: 'Effort', r: true },
+  { key: 'training_load', label: 'Load', r: true },
+  { key: 'aerobic_te', label: 'Aer. TE', r: true },
+  { key: 'anaerobic_te', label: 'Ana. TE', r: true },
   { key: 'calories', label: 'kcal', r: true },
-  { key: 'kudos_count', label: 'Kudos', r: true },
-  { key: 'pr_count', label: 'PRs', r: true },
 ]
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   let rows = list.value ?? []
   if (q) rows = rows.filter(a => a.name.toLowerCase().includes(q) || a.sport_type.toLowerCase().includes(q) || (a.device_name ?? '').toLowerCase().includes(q))
-  if (flags.value.race) rows = rows.filter(a => a.workout_type === 1 || a.workout_type === 11)
-  if (flags.value.commute) rows = rows.filter(a => a.commute)
+  if (flags.value.race) rows = rows.filter(a => a.race)
+  if (flags.value.dyn) rows = rows.filter(a => a.ground_contact_time)
   if (flags.value.trainer) rows = rows.filter(a => a.trainer)
   if (flags.value.hr) rows = rows.filter(a => a.average_heartrate)
   const k = sortKey.value
@@ -61,13 +61,13 @@ function sortBy(k: string) {
 }
 
 function exportCsv() {
-  const keys = ['id', ...columns.map(c => c.key), 'commute', 'trainer', 'gear_id', 'device_name']
+  const keys = ['id', 'garmin_id', ...columns.map(c => c.key), 'total_descent', 'stride_length', 'vertical_oscillation', 'ground_contact_time', 'vertical_ratio', 'avg_respiration', 'avg_temp', 'trainer', 'race', 'device_name']
   const esc = (v: any) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
   const csv = [keys.join(','), ...filtered.value.map(a => keys.map(k => esc(a[k])).join(','))].join('\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = 'strava-activities.csv'
+  link.download = 'activities.csv'
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -82,9 +82,9 @@ function exportCsv() {
     <div class="row" style="margin-bottom: 12px">
       <input v-model="search" type="search" placeholder="Search name, sport, device…" style="flex: 1; min-width: 180px; max-width: 360px">
       <label class="chk"><input v-model="flags.race" type="checkbox"> Races</label>
-      <label class="chk"><input v-model="flags.commute" type="checkbox"> Commutes</label>
       <label class="chk"><input v-model="flags.trainer" type="checkbox"> Indoor</label>
       <label class="chk"><input v-model="flags.hr" type="checkbox"> With HR</label>
+      <label class="chk"><input v-model="flags.dyn" type="checkbox"> Running dynamics</label>
       <span class="spacer" />
       <button class="btn small" @click="exportCsv">Export CSV</button>
     </div>
@@ -101,7 +101,7 @@ function exportCsv() {
         <tbody>
           <tr v-for="a in rows" :key="a.id">
             <td style="white-space: nowrap">{{ fmtDate(a.start_date_local) }}</td>
-            <td class="name"><a :href="stravaUrl(a.id)" target="_blank" rel="noopener" :title="a.name">{{ a.name }}</a></td>
+            <td class="name"><ActLink :gid="a.garmin_id" :title="a.name">{{ a.name }}</ActLink><span v-if="a.race" class="pill" style="margin-left: 6px">race</span></td>
             <td style="white-space: nowrap"><span class="swatch" :style="{ background: sportColor(a.sport_type) }" />{{ sportLabel(a.sport_type) }}</td>
             <td class="r">{{ a.distance ? fmtDist(a.distance, units) : '–' }}</td>
             <td class="r">{{ fmtDuration(a.moving_time) }}</td>
@@ -112,10 +112,10 @@ function exportCsv() {
             <td class="r">{{ a.max_heartrate ? nf(a.max_heartrate) : '–' }}</td>
             <td class="r">{{ a.average_watts ? nf(a.average_watts) : '–' }}</td>
             <td class="r">{{ a.average_cadence ? nf(a.average_cadence) : '–' }}</td>
-            <td class="r">{{ a.suffer_score ? nf(a.suffer_score) : '–' }}</td>
+            <td class="r">{{ a.training_load ? nf(a.training_load) : '–' }}</td>
+            <td class="r">{{ a.aerobic_te != null ? nf(a.aerobic_te, 1) : '–' }}</td>
+            <td class="r">{{ a.anaerobic_te != null ? nf(a.anaerobic_te, 1) : '–' }}</td>
             <td class="r">{{ a.calories ? nf(a.calories) : '–' }}</td>
-            <td class="r">{{ a.kudos_count }}</td>
-            <td class="r">{{ a.pr_count || '' }}</td>
           </tr>
         </tbody>
       </table>

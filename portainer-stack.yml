@@ -1,23 +1,24 @@
-# Paste this into Portainer -> Stacks -> Add stack -> Web editor.
+# Paste this into Portainer -> Stacks -> Add stack (or your existing stack) -> Web editor.
 # It expects the image "strava-analyzer:latest" to already exist on the Docker host
 # (build it with Portainer -> Images -> Build a new image, or `docker build` on the host; see README).
 services:
   strava-analyzer:
     image: strava-analyzer:latest
+    pull_policy: never   # the image is built locally on this host, never pulled from Docker Hub
     container_name: strava-analyzer
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "5000:3000"
     environment:
-      NUXT_STRAVA_CLIENT_ID: "12345"                 # from strava.com/settings/api
-      NUXT_STRAVA_CLIENT_SECRET: "your_client_secret" # from strava.com/settings/api
-      NUXT_APP_URL: "http://192.168.1.50:3000"        # exact URL you open the dashboard on, no trailing slash
-      NUXT_DASHBOARD_PASSWORD: "change-me"           # leave empty to disable the login page
-      NUXT_SYNC_INTERVAL_MINUTES: "60"               # auto-sync interval, 0 = manual only
-      NUXT_DETAIL_SYNC: "true"                       # slowly download per-activity details (best efforts, calories)
+      NUXT_DASHBOARD_PASSWORD: "change-me"   # login page for the dashboard; leave empty to disable
+      NUXT_SYNC_INTERVAL_MINUTES: "60"       # Garmin Connect + import folder sync interval, 0 = manual only
+      NUXT_GARMIN_HEALTH_DAYS: "365"         # days of health history (sleep, HRV, ...) to download
+      # NUXT_IMPORT_DIR: "/import"           # uncomment together with the /import volume below
       TZ: "Europe/Paris"
     volumes:
       - strava-data:/data
+      # Optional: a folder on the host that is scanned for new .fit / .zip files every 5 minutes
+      # - /srv/garmin-fit:/import:ro
 
 volumes:
   strava-data:

@@ -257,7 +257,7 @@ const speedOverTime = scatterChart('spd', 'd')
       </div>
       <div class="card section table-wrap">
         <table class="data">
-          <thead><tr><th>Year</th><th class="r">Activities</th><th class="r">Distance</th><th class="r">Time</th><th class="r">Elevation</th><th class="r">Avg {{ pace ? 'pace' : 'speed' }}</th><th class="r">Avg HR</th><th class="r">Kudos</th><th class="r">Δ distance</th></tr></thead>
+          <thead><tr><th>Year</th><th class="r">Activities</th><th class="r">Distance</th><th class="r">Time</th><th class="r">Elevation</th><th class="r">Avg {{ pace ? 'pace' : 'speed' }}</th><th class="r">Avg HR</th><th class="r">Load</th><th class="r">Δ distance</th></tr></thead>
           <tbody>
             <tr v-for="(r, i) in [...s.byYear].reverse()" :key="r.year">
               <td><strong>{{ r.year }}</strong></td>
@@ -267,7 +267,7 @@ const speedOverTime = scatterChart('spd', 'd')
               <td class="r">{{ fmtElev(r.elevation, units) }}</td>
               <td class="r">{{ singleSport ? fmtSpeed(r.avg_speed, units, pace ? 'Run' : 'Ride') : '–' }}</td>
               <td class="r">{{ r.avg_hr ? nf(r.avg_hr) : '–' }}</td>
-              <td class="r">{{ nf(r.kudos) }}</td>
+              <td class="r">{{ r.load ? nf(r.load) : '–' }}</td>
               <td class="r">
                 <template v-if="s.byYear[s.byYear.length - 2 - i]">
                   <span :style="{ color: r.distance >= s.byYear[s.byYear.length - 2 - i].distance ? 'var(--good)' : 'var(--critical)' }">

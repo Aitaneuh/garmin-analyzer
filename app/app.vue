@@ -10,16 +10,18 @@ const bare = computed(() => route.path === '/login')
 const nav = [
   { to: '/', label: 'Overview', icon: 'M3 12h4l3-8 4 16 3-8h4' },
   { to: '/trends', label: 'Trends', icon: 'M3 20h18M5 16l4-5 4 3 6-8' },
+  { to: '/training', label: 'Training', icon: 'M13 2 4 14h7l-1 8 9-12h-7l1-8z' },
   { to: '/records', label: 'Records & PRs', icon: 'M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 6h3v2a3 3 0 0 1-3 3M7 6H4v2a3 3 0 0 0 3 3' },
   { to: '/map', label: 'Heatmap', icon: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14' },
   { to: '/activities', label: 'Activities', icon: 'M4 6h16M4 12h16M4 18h10' },
-  { to: '/gear', label: 'Gear', icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 5a4 4 0 1 1 0 8 4 4 0 0 1 0-8z' },
+  { to: '/health', label: 'Health', icon: 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z' },
+  { to: '/devices', label: 'Devices & zones', icon: 'M8 3h8l1 4H7l1-4zM7 17h10l-1 4H8l-1-4zM6 7h12v10H6z' },
   { to: '/setup', label: 'Settings', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.4 15H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 20.6 9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 2z' },
 ]
 
 // Send first-time users to the setup page.
 watch(status, (s) => {
-  if (s && !s.connected && !s.activityCount && !['/setup', '/login'].includes(route.path)) navigateTo('/setup')
+  if (s && !s.garmin.loggedIn && !s.activityCount && !['/setup', '/login'].includes(route.path)) navigateTo('/setup')
 }, { immediate: true })
 
 // Poll while a sync runs; refresh pages when it finishes.
@@ -31,8 +33,8 @@ watch(() => status.value?.sync.running, (running, was) => {
 }, { immediate: true })
 onBeforeUnmount(() => clearInterval(timer))
 
-async function sync(full = false) {
-  await $fetch('/api/sync', { method: 'POST', body: { full } })
+async function sync() {
+  await $fetch('/api/sync', { method: 'POST' })
   await refreshStatus()
 }
 
@@ -77,13 +79,12 @@ async function logout() {
     <aside class="side" :class="{ open: menuOpen }">
       <div class="brand">
         <img src="/favicon.svg" alt="" width="26" height="26">
-        <span>Strava Analyzer</span>
+        <span>Garmin Analyzer</span>
       </div>
-      <div v-if="status?.athlete" class="athlete">
-        <img v-if="status.athlete.profile?.startsWith('http')" :src="status.athlete.profile" alt="" class="avatar">
+      <div v-if="status?.garmin.fullName || status?.devices.length" class="athlete">
         <div>
-          <div class="name">{{ status.athlete.firstname }} {{ status.athlete.lastname }}</div>
-          <div class="muted small">{{ [status.athlete.city, status.athlete.country].filter(Boolean).join(', ') }}</div>
+          <div class="name">{{ status.garmin.fullName || 'My training' }}</div>
+          <div class="muted small">{{ status.devices.slice(0, 2).join(' · ') }}</div>
         </div>
       </div>
       <nav>
@@ -95,17 +96,18 @@ async function logout() {
       <div class="side-foot">
         <div v-if="status" class="sync-info">
           <template v-if="status.sync.running">
-            <span class="dot live" /> Syncing {{ status.sync.phase === 'details' ? 'details' : 'activities' }}…
-            <span v-if="status.sync.phase === 'summary'" class="muted">({{ status.sync.fetched }})</span>
+            <span class="dot live" /> {{ status.sync.phase === 'garmin' ? 'Syncing Garmin' : status.sync.phase === 'reprocess' ? 'Re-processing' : 'Importing' }}…
+            <span v-if="status.sync.total" class="muted">({{ status.sync.done }} / {{ status.sync.total }})</span>
+            <div class="muted small ellipsis">{{ status.sync.message }}</div>
           </template>
           <template v-else>
             <span class="dot" :class="{ err: status.sync.lastSyncError }" />
             Synced {{ relTime(status.sync.lastSync) }}
           </template>
-          <div class="muted small">{{ status.activityCount }} activities · {{ status.detailCount }} detailed</div>
+          <div class="muted small">{{ nf(status.activityCount) }} activities<template v-if="status.healthDays"> · {{ nf(status.healthDays) }} health days</template></div>
         </div>
         <div class="row">
-          <button class="btn small" :disabled="!status?.connected || status?.sync.running" @click="sync()">Sync now</button>
+          <button class="btn small" :disabled="status?.sync.running" :title="status?.garmin.loggedIn ? 'Sync Garmin Connect and import new files' : 'Import new files'" @click="sync()">Sync now</button>
           <button class="btn small" :title="`Theme: ${theme}`" @click="cycleTheme">{{ theme === 'auto' ? 'Auto' : theme === 'light' ? 'Light' : 'Dark' }}</button>
           <button v-if="status?.passwordProtected" class="btn small" @click="logout">Log out</button>
         </div>
@@ -151,6 +153,7 @@ async function logout() {
 .athlete { display: flex; gap: 10px; align-items: center; padding: 10px 6px 14px; border-bottom: 1px solid var(--grid); margin-bottom: 10px; }
 .avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
 .name { font-weight: 600; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .small { font-size: 12px; }
 nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-link { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text-2); font-weight: 550; }

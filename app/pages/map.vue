@@ -43,12 +43,16 @@ function draw(fit = true) {
   layer?.remove()
   layer = L.layerGroup()
   const bounds = L.latLngBounds([])
-  const single = isDark() ? '#ff6a2b' : '#fc4c02'
+  const single = cssVar('--accent')
   for (const r of routes.value ?? []) {
     const pts = decodePolyline(r.p)
     if (pts.length < 2) continue
     const line = L.polyline(pts, { color: colorBy.value === 'sport' ? sportColor(r.sport_type) : single, weight: 2, opacity: opacity.value, smoothFactor: 1 })
-    line.bindPopup(() => `<strong><a href="${stravaUrl(r.id)}" target="_blank" rel="noopener">${escapeHtml(r.name)}</a></strong><br>${sportLabel(r.sport_type)} · ${fmtDist(r.distance, units.value)}<br>${fmtDate(r.date)}`)
+    line.bindPopup(() => {
+      const url = garminUrl(r.garmin_id)
+      const title = url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(r.name)}</a>` : escapeHtml(r.name)
+      return `<strong>${title}</strong><br>${sportLabel(r.sport_type)} · ${fmtDist(r.distance, units.value)}<br>${fmtDate(r.date)}`
+    })
     line.on('mouseover', () => line.setStyle({ opacity: 1, weight: 4 }))
     line.on('mouseout', () => line.setStyle({ opacity: opacity.value, weight: 2 }))
     line.addTo(layer)
@@ -93,7 +97,7 @@ watch(themeTick, () => { setTiles(); draw(false) })
     <div class="card" style="padding: 0; overflow: hidden">
       <div ref="el" class="map" />
     </div>
-    <p class="muted" style="font-size: 12.5px">Uses each activity's summary polyline. Private-zone hidden parts stay hidden. Click a route to open it on Strava.</p>
+    <p class="muted" style="font-size: 12.5px">Every GPS track, simplified to keep the map fast. Click a route for details (and a Garmin Connect link when known).</p>
   </div>
 </template>
 

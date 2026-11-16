@@ -1,34 +1,28 @@
-export default defineEventHandler(async (event) => {
-  const [tokens, athlete, meta, activities, details] = await Promise.all([getTokens(), getAthlete(), getMeta(), getActivities(), getDetails()])
+export default defineEventHandler(async () => {
+  const [meta, activities, health] = await Promise.all([getMeta(), getActivities(), getHealth()])
   const all = Object.values(activities)
-  const base = appBaseUrl(event)
+  const cfg = useRuntimeConfig()
+  const dir = importDir()
   return {
-    configured: isConfigured(),
-    connected: !!tokens,
     passwordProtected: !!dashboardPassword(),
-    redirectUri: `${base}/api/auth/callback`,
-    callbackDomain: new URL(base).hostname,
-    athlete: athlete && {
-      id: athlete.id,
-      firstname: athlete.firstname,
-      lastname: athlete.lastname,
-      city: athlete.city,
-      country: athlete.country,
-      profile: athlete.profile_medium || athlete.profile,
-      measurement_preference: athlete.measurement_preference,
-      weight: athlete.weight,
-      ftp: athlete.ftp,
-      created_at: athlete.created_at,
-      premium: athlete.premium ?? athlete.summit,
-      follower_count: athlete.follower_count,
-      friend_count: athlete.friend_count,
-    },
     activityCount: all.length,
-    detailCount: Object.keys(details).length,
-    pendingDetails: all.filter(a => !details[a.id] && !a.manual).length,
+    healthDays: Object.keys(health).length,
     sports: [...new Set(all.map(a => a.sport_type))].sort(),
     years: [...new Set(all.map(a => a.start_date_local.slice(0, 4)))].sort().reverse(),
-    sync: { ...meta, ...syncState, rateLimit: getRateLimit() ?? meta.rateLimit },
-    syncIntervalMinutes: Number(useRuntimeConfig().syncIntervalMinutes) || 0,
+    devices: [...new Set(all.map(a => a.device_name).filter(Boolean))],
+    garmin: {
+      available: garminAvailable(),
+      loggedIn: garminTokensExist(),
+      ...meta.garmin,
+    },
+    importDir: dir,
+    sync: {
+      lastSync: meta.lastSync,
+      lastSyncError: meta.lastSyncError,
+      lastImport: meta.lastImport,
+      lastImportSummary: meta.lastImportSummary,
+      ...syncState,
+    },
+    syncIntervalMinutes: Number(cfg.syncIntervalMinutes) || 0,
   }
 })
