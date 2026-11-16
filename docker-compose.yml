@@ -1,0 +1,24 @@
+# Portainer: Stacks -> Add stack -> paste this (or point it at your git repo).
+services:
+  strava-analyzer:
+    image: strava-analyzer:latest
+    build: .
+    container_name: strava-analyzer
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NUXT_STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID}
+      NUXT_STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET}
+      # The exact URL you open the dashboard on (no trailing slash), e.g. http://192.168.1.50:3000
+      NUXT_APP_URL: ${APP_URL}
+      # Optional but recommended if reachable by others
+      NUXT_DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
+      NUXT_SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}
+      NUXT_DETAIL_SYNC: "true"
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - strava-data:/data
+
+volumes:
+  strava-data:
