@@ -92,4 +92,5 @@ export function isPaceSport(sport: string) {
   return PACE_SPORTS.has(sport) || sport === 'AllRuns'
 }
 
-export const stravaUrl = (id: number) => `https://www.strava.com/activities/${id}`
+/** Link to the activity on Garmin Connect (only known once synced from Connect or imported from the Garmin export). */
+export const garminUrl = (gid?: number | null) => (gid ? `https://connect.garmin.com/modern/activity/${gid}` : undefined)

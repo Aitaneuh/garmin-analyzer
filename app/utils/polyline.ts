@@ -1,4 +1,4 @@
-/** Decode a Google encoded polyline (Strava summary_polyline) into [lat, lng] pairs. */
+/** Decode a Google encoded polyline into [lat, lng] pairs. */
 export function decodePolyline(str: string, precision = 5): [number, number][] {
   const factor = 10 ** precision
   const coords: [number, number][] = []

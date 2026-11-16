@@ -1,7 +1,6 @@
-export default defineEventHandler(async (event) => {
-  const body = await readBody<{ full?: boolean }>(event).catch(() => ({} as { full?: boolean }))
+// Starts a sync in the background (Garmin Connect, then the import inbox and watched folder).
+export default defineEventHandler(async () => {
   if (syncState.running) return { started: false, reason: 'already running' }
-  if (!(await getTokens())) throw createError({ statusCode: 400, statusMessage: 'Strava not connected' })
-  runSync({ full: !!body?.full }) // runs in the background; the UI polls /api/status
+  runSync().catch(e => console.error('[sync]', e))
   return { started: true }
 })

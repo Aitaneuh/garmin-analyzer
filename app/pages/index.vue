@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const { units, sport, year } = useFilters()
 const { data: s, pending } = useStats()
-const { data: official } = useFetch<any>('/api/athlete-stats', { server: false })
 const { data: recent } = useFetch<any[]>('/api/activities', { query: computed(() => ({ sport: sport.value, year: year.value })), server: false })
 
 const metric = ref<'distance' | 'time' | 'elevation'>('distance')
@@ -102,14 +101,17 @@ const sportChart = computed(() => {
   })
 })
 
-const officialRows = computed(() => {
-  const o = official.value?.stats
-  if (!o) return []
-  return [
-    { k: 'Run', recent: o.recent_run_totals, ytd: o.ytd_run_totals, all: o.all_run_totals },
-    { k: 'Ride', recent: o.recent_ride_totals, ytd: o.ytd_ride_totals, all: o.all_ride_totals },
-    { k: 'Swim', recent: o.recent_swim_totals, ytd: o.ytd_swim_totals, all: o.all_swim_totals },
-  ].filter(r => r.all?.count)
+// Latest fitness numbers from the training-load model + Garmin health data.
+const { data: well } = useWellness(30)
+const load = computed(() => s.value?.trainingLoad?.at(-1))
+const formLabel = computed(() => {
+  const v = load.value?.tsb
+  if (v == null) return ''
+  if (v > 15) return 'fresh'
+  if (v > 5) return 'rested'
+  if (v > -10) return 'neutral'
+  if (v > -30) return 'productive'
+  return 'overreaching'
 })
 </script>
 
@@ -134,9 +136,9 @@ const officialRows = computed(() => {
         <StatTile label="Eddington" :value="units === 'metric' ? s.eddington.km.value : s.eddington.mi.value" :sub="`${units === 'metric' ? s.eddington.km.daysForNext : s.eddington.mi.daysForNext} more days for next`" />
         <StatTile label="Avg speed" :value="fmtSpeed(t.avg_speed, units, sport === 'AllRuns' ? 'Run' : sport)" :sub="`avg ${fmtDist(t.avg_distance, units, 1)} per activity`" />
         <StatTile label="Avg heart rate" :value="t.avg_hr ? `${nf(t.avg_hr)} bpm` : '–'" :sub="t.max_hr ? `max ${nf(t.max_hr)} bpm` : ''" />
-        <StatTile label="Calories" :value="t.calories ? nf(t.calories) : '–'" :sub="t.kilojoules ? `${nf(t.kilojoules)} kJ of work` : 'from detailed activities'" />
-        <StatTile label="Kudos received" :value="nf(t.kudos)" :sub="`${nf(t.kudos / Math.max(1, t.count), 1)} per activity`" />
-        <StatTile label="PRs & achievements" :value="nf(s.flags.prs)" :sub="`${nf(s.flags.achievements)} achievements`" />
+        <StatTile label="Calories" :value="t.calories ? nf(t.calories) : '–'" :sub="t.kilojoules ? `${nf(t.kilojoules)} kJ of work` : `${nf(t.calories / Math.max(1, t.count))} per activity`" />
+        <StatTile label="Training load" :value="t.load ? nf(t.load) : '–'" :sub="t.avg_aerobic_te ? `avg aerobic TE ${nf(t.avg_aerobic_te, 1)}` : 'Garmin EPOC-based load'" />
+        <StatTile label="Races" :value="nf(s.flags.races)" :sub="`${nf(s.flags.trainer)} indoor activities`" />
       </div>
 
       <div class="card section">
@@ -177,30 +179,26 @@ const officialRows = computed(() => {
             <li>You've climbed <strong>{{ nf(t.everests, 1) }} Everests</strong>.</li>
             <li>That's <strong>{{ nf(t.moving_time / 86400, 1) }} days</strong> of pure moving time, plus {{ fmtDuration(t.paused_time, { long: true }) }} paused.</li>
             <li>Longest daily streak: <strong>{{ s.streaks.longestDays }} days</strong><template v-if="s.streaks.longestDaysFrom"> ({{ fmtDate(s.streaks.longestDaysFrom) }} → {{ fmtDate(s.streaks.longestDaysTo) }})</template>. Longest weekly streak: <strong>{{ s.streaks.longestWeeks }} weeks</strong>.</li>
-            <li v-if="t.first">First activity: <a :href="stravaUrl(t.first.id)" target="_blank" rel="noopener">{{ t.first.name }}</a> on {{ fmtDate(t.first.date) }}.</li>
-            <li><strong>{{ s.flags.commute }}</strong> commutes, <strong>{{ s.flags.trainer }}</strong> indoor, <strong>{{ s.flags.races }}</strong> races, <strong>{{ s.flags.group }}</strong> group activities.</li>
-            <li>{{ s.flags.withHr }} activities with heart rate, {{ s.flags.withPower }} with a power meter, {{ s.flags.photos }} photos shared.</li>
+            <li v-if="t.first">First activity: <ActLink :gid="t.first.garmin_id">{{ t.first.name }}</ActLink> on {{ fmtDate(t.first.date) }}.</li>
+            <li><strong>{{ s.flags.withGps }}</strong> with GPS, <strong>{{ s.flags.trainer }}</strong> indoor, <strong>{{ s.flags.races }}</strong> races.</li>
+            <li>{{ s.flags.withHr }} activities with heart rate, {{ s.flags.withDynamics }} with running dynamics, {{ s.flags.withPower }} with power.</li>
             <li v-if="t.avg_temp != null">Average temperature: <strong>{{ units === 'metric' ? `${nf(t.avg_temp, 1)} °C` : `${nf(t.avg_temp * 9 / 5 + 32, 0)} °F` }}</strong>.</li>
           </ul>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Strava official totals</h2><span class="hint">from your Strava profile</span></div>
-          <div v-if="!officialRows.length" class="muted">Not available yet — run a sync.</div>
-          <div v-else class="table-wrap">
-            <table class="data">
-              <thead><tr><th /><th class="r">Last 4 weeks</th><th class="r">This year</th><th class="r">All time</th></tr></thead>
-              <tbody>
-                <template v-for="r in officialRows" :key="r.k">
-                  <tr><td><strong>{{ r.k }}</strong> · distance</td><td class="r">{{ fmtDist(r.recent.distance, units, 0) }}</td><td class="r">{{ fmtDist(r.ytd.distance, units, 0) }}</td><td class="r">{{ fmtDist(r.all.distance, units, 0) }}</td></tr>
-                  <tr><td class="muted">count · time</td><td class="r">{{ r.recent.count }} · {{ fmtDuration(r.recent.moving_time, { long: true }) }}</td><td class="r">{{ r.ytd.count }} · {{ fmtDuration(r.ytd.moving_time, { long: true }) }}</td><td class="r">{{ r.all.count }} · {{ fmtDuration(r.all.moving_time, { long: true }) }}</td></tr>
-                  <tr><td class="muted">elevation</td><td class="r">{{ fmtElev(r.recent.elevation_gain, units) }}</td><td class="r">{{ fmtElev(r.ytd.elevation_gain, units) }}</td><td class="r">{{ fmtElev(r.all.elevation_gain, units) }}</td></tr>
-                </template>
-              </tbody>
-            </table>
-            <p v-if="official?.stats?.biggest_ride_distance" class="muted" style="margin: 10px 0 0">
-              Biggest ride {{ fmtDist(official.stats.biggest_ride_distance, units) }} · biggest climb {{ fmtElev(official.stats.biggest_climb_elevation_gain, units) }}
-            </p>
-          </div>
+          <div class="card-head"><h2>Fitness snapshot</h2><NuxtLink to="/training" class="hint">Training →</NuxtLink></div>
+          <table class="data">
+            <tbody>
+              <tr v-if="load"><td>Fitness <span class="muted">(42-day load)</span></td><td class="r"><strong>{{ nf(load.ctl) }}</strong></td></tr>
+              <tr v-if="load"><td>Fatigue <span class="muted">(7-day load)</span></td><td class="r">{{ nf(load.atl) }}</td></tr>
+              <tr v-if="load"><td>Form</td><td class="r">{{ nf(load.tsb) }} <span class="muted">· {{ formLabel }}</span></td></tr>
+              <tr v-if="well?.latest?.vo2max"><td>VO2 max</td><td class="r"><strong>{{ nf(well.latest.vo2max.value, 0) }}</strong></td></tr>
+              <tr v-if="well?.averages?.rhr?.d7"><td>Resting HR <span class="muted">(7-day avg)</span></td><td class="r">{{ nf(well.averages.rhr.d7) }} bpm</td></tr>
+              <tr v-if="well?.averages?.hrv?.d7"><td>HRV <span class="muted">(7-day avg)</span></td><td class="r">{{ nf(well.averages.hrv.d7) }} ms</td></tr>
+              <tr v-if="well?.averages?.sleep_s?.d7"><td>Sleep <span class="muted">(7-day avg)</span></td><td class="r">{{ fmtDuration(well.averages.sleep_s.d7) }}</td></tr>
+            </tbody>
+          </table>
+          <p v-if="!well?.hasData" class="muted" style="margin: 10px 0 0; font-size: 12.5px">Log in to Garmin Connect in <NuxtLink to="/setup">Settings</NuxtLink> to add VO2 max, resting HR, HRV and sleep.</p>
         </div>
       </div>
 
@@ -208,7 +206,7 @@ const officialRows = computed(() => {
         <div class="card-head"><h2>Sports breakdown</h2></div>
         <div class="table-wrap">
           <table class="data">
-            <thead><tr><th>Sport</th><th class="r">Activities</th><th class="r">Distance</th><th class="r">Time</th><th class="r">Elevation</th><th class="r">Avg speed / pace</th><th class="r">Avg HR</th><th class="r">Kudos</th></tr></thead>
+            <thead><tr><th>Sport</th><th class="r">Activities</th><th class="r">Distance</th><th class="r">Time</th><th class="r">Elevation</th><th class="r">Avg speed / pace</th><th class="r">Avg HR</th><th class="r">Calories</th></tr></thead>
             <tbody>
               <tr v-for="r in s.bySport" :key="r.sport">
                 <td><span class="swatch" :style="{ background: sportColor(r.sport) }" />{{ sportLabel(r.sport) }}</td>
@@ -218,7 +216,7 @@ const officialRows = computed(() => {
                 <td class="r">{{ r.elevation ? fmtElev(r.elevation, units) : '–' }}</td>
                 <td class="r">{{ r.distance ? fmtSpeed(r.avg_speed, units, r.sport) : '–' }}</td>
                 <td class="r">{{ r.avg_hr ? nf(r.avg_hr) : '–' }}</td>
-                <td class="r">{{ nf(r.kudos) }}</td>
+                <td class="r">{{ r.calories ? nf(r.calories) : '–' }}</td>
               </tr>
             </tbody>
           </table>
@@ -233,7 +231,7 @@ const officialRows = computed(() => {
             <tbody>
               <tr v-for="a in (recent ?? []).slice(0, 10)" :key="a.id">
                 <td>{{ fmtDate(a.start_date_local) }}</td>
-                <td><a :href="stravaUrl(a.id)" target="_blank" rel="noopener">{{ a.name }}</a></td>
+                <td><ActLink :gid="a.garmin_id">{{ a.name }}</ActLink></td>
                 <td><span class="swatch" :style="{ background: sportColor(a.sport_type) }" />{{ sportLabel(a.sport_type) }}</td>
                 <td class="r">{{ a.distance ? fmtDist(a.distance, units) : '–' }}</td>
                 <td class="r">{{ fmtDuration(a.moving_time) }}</td>

@@ -1,4 +1,4 @@
-# Portainer: Stacks -> Add stack -> paste this (or point it at your git repo).
+# docker compose up -d --build   (or a Portainer stack pointed at this git repo)
 services:
   strava-analyzer:
     image: strava-analyzer:latest
@@ -6,19 +6,16 @@ services:
     container_name: strava-analyzer
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "5000:3000"
     environment:
-      NUXT_STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID}
-      NUXT_STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET}
-      # The exact URL you open the dashboard on (no trailing slash), e.g. http://192.168.1.50:3000
-      NUXT_APP_URL: ${APP_URL}
-      # Optional but recommended if reachable by others
       NUXT_DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}
       NUXT_SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}
-      NUXT_DETAIL_SYNC: "true"
+      NUXT_GARMIN_HEALTH_DAYS: ${GARMIN_HEALTH_DAYS:-365}
+      NUXT_IMPORT_DIR: ${IMPORT_DIR_IN_CONTAINER:-}
       TZ: ${TZ:-Europe/Paris}
     volumes:
       - strava-data:/data
+      # - /srv/garmin-fit:/import:ro   # optional watched folder (also set IMPORT_DIR_IN_CONTAINER=/import)
 
 volumes:
   strava-data:
